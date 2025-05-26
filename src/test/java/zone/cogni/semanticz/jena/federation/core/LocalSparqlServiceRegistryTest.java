@@ -181,11 +181,11 @@ class LocalSparqlServiceRegistryTest {
     }
 
     @Test
-    void testFederatedQuery() {
+    void testFederatedQueryWithModel() {
         // Register the test model
         String serviceUri = ServiceUriConstants.createServiceUri("test-persons");
-        registry.registerModel(serviceUri, testModel);
         registry.initialize();
+        registry.registerModel(serviceUri, testModel);
 
         // Create a primary model (can be empty for this test)
         Model primaryModel = ModelFactory.createDefaultModel();
@@ -205,10 +205,21 @@ class LocalSparqlServiceRegistryTest {
 
         try (QueryExecution qExec = QueryExecutionFactory.create(queryString, primaryModel)) {
             ResultSet results = qExec.execSelect();
-            ResultSetFormatter.out(System.out, results);
-            // Note: Current implementation returns empty results for SERVICE calls
-            // This is a placeholder - full implementation would return actual data
-//            assertFalse(results.hasNext(), "Current implementation returns empty results");
+            ResultSetRewindable rewindable = ResultSetFactory.copyResults(results);
+
+            // Optional: debug output
+            ResultSetFormatter.out(System.out, rewindable);
+            rewindable.reset();
+
+            // Assertions
+            assertTrue(rewindable.hasNext(), "Expected at least one result");
+
+            QuerySolution solution = rewindable.next();
+            assertEquals("http://example.org/person1", solution.getResource("person").getURI());
+            assertEquals("Test Person", solution.getLiteral("label").getString());
+
+            // Assert no more results
+            assertFalse(rewindable.hasNext(), "Expected only one result");
         }
     }
 
@@ -216,8 +227,8 @@ class LocalSparqlServiceRegistryTest {
     void testFederatedQueryWithDataset() {
         // Register the test dataset
         String serviceUri = ServiceUriConstants.createServiceUri("test-companies");
-        registry.registerDataset(serviceUri, testDataset);
         registry.initialize();
+        registry.registerDataset(serviceUri, testDataset);
 
         // Create a primary model
         Model primaryModel = ModelFactory.createDefaultModel();
@@ -254,7 +265,6 @@ class LocalSparqlServiceRegistryTest {
             assertFalse(rewindable.hasNext(), "Expected only one result");
         }
     }
-
 
     @Test
     void testUnregisteredServiceUri() {
