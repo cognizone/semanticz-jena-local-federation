@@ -1,0 +1,2 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+zone.cogni.semanticz.jena.federation.spring.LocalSparqlServiceConfiguration

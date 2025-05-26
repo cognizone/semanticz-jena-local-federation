@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: semanticz-jena-local-federation
+
+logging:
+  level:
+    zone.cogni.semanticz: DEBUG
+    org.apache.jena: INFO

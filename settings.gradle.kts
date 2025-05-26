@@ -1,0 +1,1 @@
+rootProject.name = "semanticz-jena-local-federation"
