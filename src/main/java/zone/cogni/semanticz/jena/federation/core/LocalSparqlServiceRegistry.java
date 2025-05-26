@@ -19,20 +19,25 @@
 
 package zone.cogni.semanticz.jena.federation.core;
 
-import org.apache.jena.query.*;
+import org.apache.jena.query.Dataset;
+import org.apache.jena.query.Query;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.sparql.algebra.op.OpService;
 import org.apache.jena.sparql.engine.ExecutionContext;
 import org.apache.jena.sparql.engine.QueryIterator;
 import org.apache.jena.sparql.engine.binding.Binding;
 import org.apache.jena.sparql.engine.iterator.QueryIterNullIterator;
-import org.apache.jena.sparql.service.ServiceExecutorFactory;
+import org.apache.jena.sparql.engine.iterator.QueryIteratorResultSet;
 import org.apache.jena.sparql.service.ServiceExecutorRegistry;
-import org.apache.jena.sparql.service.ServiceExecution;
+import org.apache.jena.sparql.service.single.ServiceExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -42,7 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 
  * This implementation is framework-agnostic and thread-safe.
  */
-public class LocalSparqlServiceRegistry implements ServiceRegistry, ServiceExecutorFactory {
+public class LocalSparqlServiceRegistry implements ServiceRegistry, ServiceExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(LocalSparqlServiceRegistry.class);
 
@@ -119,7 +124,10 @@ public class LocalSparqlServiceRegistry implements ServiceRegistry, ServiceExecu
     public void initialize() {
         if (initialized.compareAndSet(false, true)) {
             log.info("Registering LocalSparqlServiceRegistry with Jena ServiceExecutorRegistry");
-            ServiceExecutorRegistry.get().add(this);
+
+            ServiceExecutorRegistry registry = ServiceExecutorRegistry.get();
+            registry.add(this); // uses add(ServiceExecutor), which wraps it in a ChainingServiceExecutorWrapper
+
             log.info("LocalSparqlServiceRegistry registered successfully");
         } else {
             log.warn("LocalSparqlServiceRegistry is already initialized");
@@ -130,8 +138,10 @@ public class LocalSparqlServiceRegistry implements ServiceRegistry, ServiceExecu
     public void shutdown() {
         if (initialized.compareAndSet(true, false)) {
             log.info("Unregistering LocalSparqlServiceRegistry from Jena ServiceExecutorRegistry");
-            ServiceExecutorRegistry.get().remove(this);
+
+            ServiceExecutorRegistry.get().remove(this); // this uses object equality to find the correct delegate
             clear();
+
             log.info("LocalSparqlServiceRegistry unregistered and cleared");
         } else {
             log.warn("LocalSparqlServiceRegistry is not initialized or already shut down");
@@ -141,96 +151,76 @@ public class LocalSparqlServiceRegistry implements ServiceRegistry, ServiceExecu
     // --- Implementation of ServiceExecutorFactory ---
 
     @Override
-    public ServiceExecution createExecutor(OpService opExecute, OpService opOriginal, Binding binding, ExecutionContext execCxt) {
+    public QueryIterator createExecution(OpService opExecute, OpService original, Binding binding, ExecutionContext execCxt) {
         if (!initialized.get()) {
-            log.trace("Registry not initialized, skipping service URI: {}", opExecute.getService().getURI());
+            log.trace("Registry not initialized. Skipping service URI: {}", opExecute.getService().getURI());
             return null;
         }
 
         String serviceUri = opExecute.getService().getURI();
 
-        // Check if it's one of our registered datasets
-        Dataset localDs = localDatasets.get(serviceUri);
-        if (localDs != null) {
+        Dataset dataset = localDatasets.get(serviceUri);
+        if (dataset != null) {
             log.debug("Handling SERVICE call to registered Dataset: {}", serviceUri);
-            QueryIterator iter = executeLocallyOnDataset(opExecute, localDs, execCxt);
-            return new ServiceExecution() {
-                @Override
-                public QueryIterator exec() {
-                    return iter;
-                }
-            };
+            return executeLocallyOnDataset(opExecute, dataset, execCxt);
         }
 
-        // Check if it's one of our registered models
-        Model localModel = localModels.get(serviceUri);
-        if (localModel != null) {
+        Model model = localModels.get(serviceUri);
+        if (model != null) {
             log.debug("Handling SERVICE call to registered Model: {}", serviceUri);
-            QueryIterator iter = executeLocallyOnModel(opExecute, localModel, execCxt);
-            return new ServiceExecution() {
-                @Override
-                public QueryIterator exec() {
-                    return iter;
-                }
-            };
+            return executeLocallyOnModel(opExecute, model, execCxt);
         }
 
-        // If the URI doesn't match any registered local source, return null
-        // to let Jena try other registered factories (e.g., the default HTTP handler).
-        log.trace("Service URI {} not handled by LocalSparqlServiceRegistry", serviceUri);
+        // Let other registered ServiceExecutors try to handle it
+        log.trace("Service URI '{}' not handled by LocalSparqlServiceRegistry.", serviceUri);
         return null;
     }
 
     private QueryIterator executeLocallyOnDataset(OpService opExecute, Dataset dataset, ExecutionContext execCxt) {
         try {
-            // For simplicity, create a basic SELECT query for the sub-operation
-            // In a real implementation, you'd need more sophisticated query conversion
-            String queryString = "SELECT * WHERE { " + opExecute.getSubOp().toString() + " }";
-            Query subQuery = QueryFactory.create(queryString);
-            
+            Query subQuery = org.apache.jena.sparql.algebra.OpAsQuery.asQuery(opExecute.getSubOp());
+
             if (!subQuery.isSelectType()) {
                 log.warn("Local SERVICE execution currently only supports SELECT queries");
                 return QueryIterNullIterator.create(execCxt);
             }
 
-            // For now, return a null iterator to indicate successful but empty execution
-            // In a full implementation, you'd need proper algebra conversion
-            log.warn("SERVICE execution not fully implemented - returning empty results");
-            return QueryIterNullIterator.create(execCxt);
+            try (var qExec = org.apache.jena.query.QueryExecutionFactory.create(subQuery, dataset)) {
+                var results = qExec.execSelect();
+                var rewindable = org.apache.jena.query.ResultSetFactory.copyResults(results);
+                return new QueryIteratorResultSet(rewindable);
+            }
 
         } catch (Exception e) {
-            log.error("Error executing local SERVICE sub-query for URI {}: {}", 
-                    opExecute.getService().getURI(), opExecute.getSubOp(), e);
+            log.error("Error executing local SERVICE sub-query for URI {}: {}",
+                      opExecute.getService().getURI(), opExecute.getSubOp(), e);
             return QueryIterNullIterator.create(execCxt);
         }
     }
 
     private QueryIterator executeLocallyOnModel(OpService opExecute, Model model, ExecutionContext execCxt) {
         try {
-            // For simplicity, create a basic SELECT query for the sub-operation
-            // In a real implementation, you'd need more sophisticated query conversion
-            String queryString = "SELECT * WHERE { " + opExecute.getSubOp().toString() + " }";
-            Query subQuery = QueryFactory.create(queryString);
-            
+            Query subQuery = org.apache.jena.sparql.algebra.OpAsQuery.asQuery(opExecute.getSubOp());
+
             if (!subQuery.isSelectType()) {
                 log.warn("Local SERVICE execution currently only supports SELECT queries");
                 return QueryIterNullIterator.create(execCxt);
             }
 
-            // For now, return a null iterator to indicate successful but empty execution
-            // In a full implementation, you'd need proper algebra conversion
-            log.warn("SERVICE execution not fully implemented - returning empty results");
-            return QueryIterNullIterator.create(execCxt);
+            try (var qExec = org.apache.jena.query.QueryExecutionFactory.create(subQuery, model)) {
+                var results = qExec.execSelect();
+                var rewindable = org.apache.jena.query.ResultSetFactory.copyResults(results);
+                return new QueryIteratorResultSet(rewindable);
+            }
 
         } catch (Exception e) {
-            log.error("Error executing local SERVICE sub-query for URI {}: {}", 
-                    opExecute.getService().getURI(), opExecute.getSubOp(), e);
+            log.error("Error executing local SERVICE sub-query for URI {}: {}",
+                      opExecute.getService().getURI(), opExecute.getSubOp(), e);
             return QueryIterNullIterator.create(execCxt);
         }
     }
 
     // Utility methods for inspection
-
     /**
      * Gets the number of registered datasets.
      */

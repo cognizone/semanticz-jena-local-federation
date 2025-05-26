@@ -1,4 +1,4 @@
-2# Semanticz Jena Local Federation
+# Semanticz Jena Local Federation
 
 A Spring Boot library component for SPARQL federation on local Jena Models and TDB datasets. This library enables efficient SPARQL queries across multiple local data sources using custom SERVICE URIs, without requiring external HTTP calls.
 
