@@ -80,92 +80,123 @@ class LocalSparqlServiceRegistryTest {
 
     @Test
     void testRegisterAndUnregisterModel() {
+        // given
         String serviceUri = ServiceUriConstants.createServiceUri("test-model");
-        
         assertFalse(registry.isRegistered(serviceUri));
         assertEquals(0, registry.getModelCount());
         
+        // when - register model
         registry.registerModel(serviceUri, testModel);
         
+        // then - verify registration
         assertTrue(registry.isRegistered(serviceUri));
         assertEquals(1, registry.getModelCount());
         assertTrue(registry.getRegisteredServices().contains(serviceUri));
         
-        assertTrue(registry.unregisterService(serviceUri));
+        // when - unregister model
+        boolean unregistered = registry.unregisterService(serviceUri);
+        
+        // then - verify unregistration
+        assertTrue(unregistered);
         assertFalse(registry.isRegistered(serviceUri));
         assertEquals(0, registry.getModelCount());
     }
 
     @Test
     void testRegisterAndUnregisterDataset() {
+        // given
         String serviceUri = ServiceUriConstants.createServiceUri("test-dataset");
-        
         assertFalse(registry.isRegistered(serviceUri));
         assertEquals(0, registry.getDatasetCount());
         
+        // when - register dataset
         registry.registerDataset(serviceUri, testDataset);
         
+        // then - verify registration
         assertTrue(registry.isRegistered(serviceUri));
         assertEquals(1, registry.getDatasetCount());
         assertTrue(registry.getRegisteredServices().contains(serviceUri));
         
-        assertTrue(registry.unregisterService(serviceUri));
+        // when - unregister dataset
+        boolean unregistered = registry.unregisterService(serviceUri);
+        
+        // then - verify unregistration
+        assertTrue(unregistered);
         assertFalse(registry.isRegistered(serviceUri));
         assertEquals(0, registry.getDatasetCount());
     }
 
     @Test
     void testDuplicateRegistrationThrowsException() {
+        // given
         String serviceUri = ServiceUriConstants.createServiceUri("test-duplicate");
-        
         registry.registerModel(serviceUri, testModel);
         
+        // when/then - attempt duplicate model registration
         assertThrows(IllegalArgumentException.class, () -> 
             registry.registerModel(serviceUri, testModel));
         
+        // when/then - attempt dataset registration on same URI
         assertThrows(IllegalArgumentException.class, () -> 
             registry.registerDataset(serviceUri, testDataset));
     }
 
     @Test
     void testNullArgumentsThrowException() {
+        // given - registry is set up in @BeforeEach
+        
+        // when/then - test null service URI for model
         assertThrows(NullPointerException.class, () -> 
             registry.registerModel(null, testModel));
         
+        // when/then - test null model
         assertThrows(NullPointerException.class, () -> 
             registry.registerModel("test", null));
         
+        // when/then - test null service URI for dataset
         assertThrows(NullPointerException.class, () -> 
             registry.registerDataset(null, testDataset));
         
+        // when/then - test null dataset
         assertThrows(NullPointerException.class, () -> 
             registry.registerDataset("test", null));
     }
 
     @Test
     void testInitializeAndShutdown() {
+        // given
         assertFalse(registry.isInitialized());
         
+        // when - initialize registry
         registry.initialize();
+        
+        // then - verify initialization
         assertTrue(registry.isInitialized());
         
-        // Test that double initialization is safe
+        // when - initialize again (should be safe)
         registry.initialize();
+        
+        // then - still initialized
         assertTrue(registry.isInitialized());
         
+        // when - shutdown registry
         registry.shutdown();
+        
+        // then - verify shutdown
         assertFalse(registry.isInitialized());
         
-        // Test that double shutdown is safe
+        // when - shutdown again (should be safe)
         registry.shutdown();
+        
+        // then - still shut down
         assertFalse(registry.isInitialized());
     }
 
     @Test
     void testClear() {
+        // given
         String modelUri = ServiceUriConstants.createServiceUri("test-model");
         String datasetUri = ServiceUriConstants.createServiceUri("test-dataset");
-        
         registry.registerModel(modelUri, testModel);
         registry.registerDataset(datasetUri, testDataset);
         
@@ -173,8 +204,10 @@ class LocalSparqlServiceRegistryTest {
         assertEquals(1, registry.getDatasetCount());
         assertEquals(2, registry.getRegisteredServices().size());
         
+        // when
         registry.clear();
         
+        // then
         assertEquals(0, registry.getModelCount());
         assertEquals(0, registry.getDatasetCount());
         assertEquals(0, registry.getRegisteredServices().size());
@@ -182,15 +215,12 @@ class LocalSparqlServiceRegistryTest {
 
     @Test
     void testFederatedQueryWithModel() {
-        // Register the test model
+        // given
         String serviceUri = ServiceUriConstants.createServiceUri("test-persons");
         registry.initialize();
         registry.registerModel(serviceUri, testModel);
-
-        // Create a primary model (can be empty for this test)
         Model primaryModel = ModelFactory.createDefaultModel();
 
-        // Query that uses the federated service
         String queryString = String.format("""
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
             
@@ -203,6 +233,7 @@ class LocalSparqlServiceRegistryTest {
             }
             """, serviceUri);
 
+        // when
         try (QueryExecution qExec = QueryExecutionFactory.create(queryString, primaryModel)) {
             ResultSet results = qExec.execSelect();
             ResultSetRewindable rewindable = ResultSetFactory.copyResults(results);
@@ -211,29 +242,25 @@ class LocalSparqlServiceRegistryTest {
             ResultSetFormatter.out(System.out, rewindable);
             rewindable.reset();
 
-            // Assertions
+            // then
             assertTrue(rewindable.hasNext(), "Expected at least one result");
 
             QuerySolution solution = rewindable.next();
             assertEquals("http://example.org/person1", solution.getResource("person").getURI());
             assertEquals("Test Person", solution.getLiteral("label").getString());
 
-            // Assert no more results
             assertFalse(rewindable.hasNext(), "Expected only one result");
         }
     }
 
     @Test
     void testFederatedQueryWithDataset() {
-        // Register the test dataset
+        // given
         String serviceUri = ServiceUriConstants.createServiceUri("test-companies");
         registry.initialize();
         registry.registerDataset(serviceUri, testDataset);
-
-        // Create a primary model
         Model primaryModel = ModelFactory.createDefaultModel();
 
-        // Query that uses the federated service
         String queryString = String.format("""
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         
@@ -246,6 +273,7 @@ class LocalSparqlServiceRegistryTest {
         }
         """, serviceUri);
 
+        // when
         try (QueryExecution qExec = QueryExecutionFactory.create(queryString, primaryModel)) {
             ResultSet results = qExec.execSelect();
             ResultSetRewindable rewindable = ResultSetFactory.copyResults(results);
@@ -254,25 +282,23 @@ class LocalSparqlServiceRegistryTest {
             ResultSetFormatter.out(System.out, rewindable);
             rewindable.reset();
 
-            // Assertions
+            // then
             assertTrue(rewindable.hasNext(), "Expected at least one result");
 
             QuerySolution solution = rewindable.next();
             assertEquals("http://example.org/company1", solution.getResource("company").getURI());
             assertEquals("Test Company", solution.getLiteral("label").getString());
 
-            // Assert no more results
             assertFalse(rewindable.hasNext(), "Expected only one result");
         }
     }
 
     @Test
     void testUnregisteredServiceUri() {
+        // given
         registry.initialize();
-        
         Model primaryModel = ModelFactory.createDefaultModel();
         
-        // Query with unregistered service URI should not cause errors
         String queryString = """
             SELECT ?s ?p ?o
             WHERE {
@@ -282,8 +308,7 @@ class LocalSparqlServiceRegistryTest {
             }
             """;
         
-        // For HTTP services, this will try to make an actual HTTP call and fail
-        // For our local registry, unregistered URN services should be ignored
+        // when/then - HTTP services should fail with QueryExceptionHTTP
         assertThrows(org.apache.jena.sparql.engine.http.QueryExceptionHTTP.class, () -> {
             try (QueryExecution qExec = QueryExecutionFactory.create(queryString, primaryModel)) {
                 ResultSet results = qExec.execSelect();

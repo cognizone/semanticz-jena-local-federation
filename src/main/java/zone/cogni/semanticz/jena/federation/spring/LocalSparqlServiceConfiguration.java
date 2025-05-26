@@ -19,11 +19,12 @@
 
 package zone.cogni.semanticz.jena.federation.spring;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
+import org.apache.jena.sparql.ARQConstants;
+import org.apache.jena.sparql.service.ServiceExecutorRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import zone.cogni.semanticz.jena.federation.core.LocalSparqlServiceRegistry;
@@ -31,62 +32,23 @@ import zone.cogni.semanticz.jena.federation.core.ServiceRegistry;
 
 /**
  * Spring Boot auto-configuration for the Local SPARQL Service Registry.
- * 
+ * <p>
  * This configuration automatically creates and manages a ServiceRegistry bean
  * when Spring Boot and Jena ARQ are on the classpath.
  */
 @Configuration
-@ConditionalOnClass({org.apache.jena.query.Query.class})
+@ConditionalOnClass(org.apache.jena.query.Query.class)
 public class LocalSparqlServiceConfiguration {
 
-    private static final Logger log = LoggerFactory.getLogger(LocalSparqlServiceConfiguration.class);
+  static {
+    // THIS LINE IS CRITICAL – kick off Jena’s own
+    // SystemARQ / ARQConstants / FunctionRegistry wiring
+    org.apache.jena.sys.JenaSystem.init();
+  }
 
-    /**
-     * Creates a ServiceRegistry bean that will be automatically initialized
-     * and shut down with the Spring application context.
-     */
-    @Bean
-    public ServiceRegistry serviceRegistry() {
-        log.info("Creating LocalSparqlServiceRegistry bean");
-        return new LocalSparqlServiceRegistry();
-    }
+  @Bean(initMethod="initialize", destroyMethod="shutdown")
+  public LocalSparqlServiceRegistry serviceRegistry() {
+    return new LocalSparqlServiceRegistry();
+  }
 
-    /**
-     * Wrapper bean to manage the lifecycle of the ServiceRegistry.
-     */
-    @Bean
-    public ServiceRegistryLifecycleManager serviceRegistryLifecycleManager(ServiceRegistry serviceRegistry) {
-        return new ServiceRegistryLifecycleManager(serviceRegistry);
-    }
-
-    /**
-     * Manages the initialization and shutdown of the ServiceRegistry.
-     */
-    public static class ServiceRegistryLifecycleManager {
-        private static final Logger log = LoggerFactory.getLogger(ServiceRegistryLifecycleManager.class);
-        
-        private final ServiceRegistry serviceRegistry;
-
-        public ServiceRegistryLifecycleManager(ServiceRegistry serviceRegistry) {
-            this.serviceRegistry = serviceRegistry;
-        }
-
-        @PostConstruct
-        public void initialize() {
-            log.info("Initializing ServiceRegistry");
-            serviceRegistry.initialize();
-            log.info("ServiceRegistry initialized successfully");
-        }
-
-        @PreDestroy
-        public void shutdown() {
-            log.info("Shutting down ServiceRegistry");
-            serviceRegistry.shutdown();
-            log.info("ServiceRegistry shut down successfully");
-        }
-
-        public ServiceRegistry getServiceRegistry() {
-            return serviceRegistry;
-        }
-    }
 }

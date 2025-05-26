@@ -58,6 +58,7 @@ dependencies {
     implementation(libs.jena.arq)
     implementation(libs.jena.fuseki.main)
     implementation(libs.jena.tdb2)
+    implementation("org.apache.jena:jena-core:${libs.versions.jena.get()}")
     implementation(libs.guava)
     
     // Spring framework (optional - only for Spring integration)
@@ -69,7 +70,9 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation("org.springframework:spring-context:6.2.1")
     testImplementation("org.springframework.boot:spring-boot-autoconfigure:3.4.1")
+    testImplementation("org.springframework.boot:spring-boot-starter-test:3.4.1")
     testImplementation(libs.logback.classic)
+    testImplementation("org.yaml:snakeyaml:2.0")
 }
 
 tasks.register("qualityCheck") {

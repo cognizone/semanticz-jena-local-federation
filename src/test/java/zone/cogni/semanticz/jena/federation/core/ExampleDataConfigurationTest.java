@@ -58,11 +58,15 @@ class ExampleDataConfigurationTest {
     @Test
     void testRegisterExampleData() {
         try {
+            // given
+            // (no additional setup needed beyond @BeforeEach)
+            
+            // when
             registerVocabularyModel();
             registerTdbDataset();
             registerPersonsModel();
             
-            // Verify all services are registered
+            // then
             assertEquals(3, serviceRegistry.getRegisteredServices().size());
             assertTrue(serviceRegistry.isRegistered(ServiceUriConstants.createServiceUri("vocabulary")));
             assertTrue(serviceRegistry.isRegistered(ServiceUriConstants.createServiceUri("example-tdb")));
@@ -75,9 +79,10 @@ class ExampleDataConfigurationTest {
     private void registerVocabularyModel() {
         log.info("Creating and registering vocabulary model");
         
+        // given
         Model vocabModel = ModelFactory.createDefaultModel();
         
-        // Add some vocabulary data
+        // when - create vocabulary data
         Resource conceptClass = vocabModel.createResource("http://example.org/vocab#Concept");
         conceptClass.addProperty(RDF.type, RDFS.Class);
         conceptClass.addProperty(RDFS.label, "Concept");
@@ -88,21 +93,22 @@ class ExampleDataConfigurationTest {
         hasCategory.addProperty(RDFS.label, "has category");
         hasCategory.addProperty(RDFS.domain, conceptClass);
 
+        // when - register the model
         String vocabularyServiceUri = ServiceUriConstants.createServiceUri("vocabulary");
         serviceRegistry.registerModel(vocabularyServiceUri, vocabModel);
+        
         log.info("Registered vocabulary model at {}", vocabularyServiceUri);
     }
 
     private void registerTdbDataset() throws IOException {
         log.info("Creating and registering TDB2 dataset");
         
-        // Create temporary directory for TDB
+        // given
         Path tdbPath = Paths.get("target", "example-tdb");
         Files.createDirectories(tdbPath);
-        
         Dataset tdbDataset = TDB2Factory.connectDataset(tdbPath.toString());
         
-        // Add some sample data to TDB
+        // when - populate dataset with sample data
         tdbDataset.executeWrite(() -> {
             Model defaultModel = tdbDataset.getDefaultModel();
             
@@ -117,17 +123,20 @@ class ExampleDataConfigurationTest {
             person2.addProperty(defaultModel.createProperty("http://example.org/vocab#hasCategory"), "developer");
         });
 
+        // when - register the dataset
         String tdbServiceUri = ServiceUriConstants.createServiceUri("example-tdb");
         serviceRegistry.registerDataset(tdbServiceUri, tdbDataset);
+        
         log.info("Registered TDB dataset at {}", tdbServiceUri);
     }
 
     private void registerPersonsModel() {
         log.info("Creating and registering persons model");
         
+        // given
         Model personsModel = ModelFactory.createDefaultModel();
         
-        // Add some additional person data
+        // when - create person data with additional properties
         Resource person3 = personsModel.createResource("http://example.org/data#person3");
         person3.addProperty(RDF.type, personsModel.createResource("http://example.org/vocab#Person"));
         person3.addProperty(RDFS.label, "Alice Johnson");
@@ -140,8 +149,10 @@ class ExampleDataConfigurationTest {
         person4.addProperty(SKOS.prefLabel, "Bob Wilson");
         person4.addProperty(personsModel.createProperty("http://example.org/vocab#hasCategory"), "analyst");
 
+        // when - register the model
         String personsServiceUri = ServiceUriConstants.createServiceUri("persons");
         serviceRegistry.registerModel(personsServiceUri, personsModel);
+        
         log.info("Registered persons model at {}", personsServiceUri);
     }
 }
