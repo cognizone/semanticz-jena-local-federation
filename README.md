@@ -11,6 +11,13 @@ A Spring Boot library component for SPARQL federation on local Jena Models and T
 - **Multiple data source types**: Support for both Jena Models and Datasets
 - **Easy registration**: Simple API for registering local data sources
 
+## Requirements
+
+- **Java**: 17+
+- **Apache Jena**: 5.3.0+
+- **Spring Boot**: 3.4+ (for Spring integration)
+- **Spring Framework**: 6.2+ (for Spring integration)
+
 ## Quick Start
 
 ### 1. Add Dependency
