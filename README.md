@@ -17,6 +17,7 @@ A Spring Boot library component for SPARQL federation on local Jena Models and T
 
 Add this library to your Spring Boot application:
 
+#### Maven
 ```xml
 <dependency>
     <groupId>zone.cogni.semanticz</groupId>
@@ -25,14 +26,35 @@ Add this library to your Spring Boot application:
 </dependency>
 ```
 
-### 2. Register Data Sources
+#### Gradle
+```gradle
+implementation 'zone.cogni.semanticz:semanticz-jena-local-federation:1.0.0-SNAPSHOT'
+```
+
+### 2. Automatic Configuration
+
+The library provides **automatic Spring Boot configuration** through `LocalSparqlServiceConfiguration`. When Jena ARQ is detected on the classpath, the configuration automatically:
+
+- Creates a `LocalSparqlServiceRegistry` bean
+- Initializes the registry with Jena's ServiceExecutorRegistry during startup
+- Properly shuts down the registry when the application context closes
+- Ensures `JenaSystem.init()` is called for proper Jena initialization
+
+**No additional configuration is required** - the registry bean is ready to use as soon as your Spring Boot application starts.
+
+### 3. Register Data Sources
+
+Inject the `ServiceRegistry` bean and register your local data sources:
 
 ```java
 @Configuration
 public class MyDataConfiguration {
     
-    @Autowired
-    private ServiceRegistry serviceRegistry;
+    private final ServiceRegistry serviceRegistry;
+    
+    public MyDataConfiguration(ServiceRegistry serviceRegistry) {
+        this.serviceRegistry = serviceRegistry;
+    }
     
     @PostConstruct
     public void registerData() {
@@ -44,12 +66,34 @@ public class MyDataConfiguration {
         Dataset tdbDataset = TDB2Factory.connectDataset("/path/to/tdb");
         serviceRegistry.registerDataset("urn:jena:service:my-data", tdbDataset);
     }
+    
+    private Model loadVocabularyModel() {
+        // Your vocabulary loading logic here
+        Model model = ModelFactory.createDefaultModel();
+        // ... populate model
+        return model;
+    }
 }
 ```
 
-### 3. Use Federation in SPARQL Queries
+#### Alternative: Using ServiceUriConstants
 
-#### Basic Federation Query
+For consistent URI management, use the provided constants:
+
+```java
+@PostConstruct
+public void registerData() {
+    // Using ServiceUriConstants for consistent URI formatting
+    String vocabUri = ServiceUriConstants.createServiceUri("vocabulary");
+    String dataUri = ServiceUriConstants.createServiceUri("my-data");
+    
+    serviceRegistry.registerModel(vocabUri, loadVocabularyModel());
+    serviceRegistry.registerDataset(dataUri, loadTdbDataset());
+}
+```
+
+### 4. Use Federation in SPARQL Queries
+
 ```java
 String basicQuery = """
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -71,98 +115,42 @@ try (QueryExecution qExec = QueryExecutionFactory.create(basicQuery, primaryMode
 }
 ```
 
-#### Cross-Service Federation with Joins
-```java
-String joinQuery = """
-    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    PREFIX vocab: <http://example.org/vocab#>
-    
-    SELECT ?person ?label ?category ?vocabLabel
-    WHERE {
-      # Query the TDB dataset for persons
-      SERVICE <urn:jena:service:example-tdb> {
-        ?person a vocab:Person ;
-                rdfs:label ?label ;
-                vocab:hasCategory ?category .
-      }
-      
-      # Get vocabulary information from the vocabulary service
-      SERVICE <urn:jena:service:vocabulary> {
-        vocab:hasCategory rdfs:label ?vocabLabel .
-      }
-    }
-    """;
-```
+## Architecture Overview
 
-#### Optional Federation
-```java
-String optionalQuery = """
-    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-    PREFIX vocab: <http://example.org/vocab#>
-    
-    SELECT ?person ?label ?category ?prefLabel
-    WHERE {
-      # Query the TDB dataset for persons
-      SERVICE <urn:jena:service:example-tdb> {
-        ?person a vocab:Person ;
-                rdfs:label ?label ;
-                vocab:hasCategory ?category .
-      }
-      
-      # Optionally get preferred labels from the persons service
-      OPTIONAL {
-        SERVICE <urn:jena:service:persons> {
-          ?person skos:prefLabel ?prefLabel .
-        }
-      }
-    }
-    """;
-```
+### Core Components
 
-#### Union Across Multiple Services
-```java
-String unionQuery = """
-    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    PREFIX vocab: <http://example.org/vocab#>
-    
-    SELECT ?person ?label ?source
-    WHERE {
-      {
-        SERVICE <urn:jena:service:example-tdb> {
-          ?person a vocab:Person ;
-                  rdfs:label ?label .
-        }
-        BIND("TDB" AS ?source)
-      }
-      UNION
-      {
-        SERVICE <urn:jena:service:persons> {
-          ?person a vocab:Person ;
-                  rdfs:label ?label .
-        }
-        BIND("Persons Model" AS ?source)
-      }
-    }
-    """;
-```
+The library consists of two main layers:
 
-#### Filtered Federation
+1. **Framework-agnostic Core** (`zone.cogni.semanticz.jena.federation.core`)
+   - `ServiceRegistry` interface - Core API for registering local data sources
+   - `LocalSparqlServiceRegistry` - Thread-safe implementation that integrates with Jena's ServiceExecutorRegistry
+   - `ServiceUriConstants` - Utilities for consistent SERVICE URI management
+
+2. **Spring Boot Integration** (`zone.cogni.semanticz.jena.federation.spring`)
+   - `LocalSparqlServiceConfiguration` - Auto-configuration that creates and manages the registry bean
+
+### How It Works
+
+1. **Registration**: Local Jena Models and Datasets are registered with custom SERVICE URIs (e.g., `urn:jena:service:my-data`)
+2. **Integration**: The registry registers itself with Jena's global ServiceExecutorRegistry
+3. **Query Processing**: When SPARQL queries contain SERVICE clauses with registered URIs, the registry intercepts them
+4. **Local Execution**: Sub-queries are executed locally on the registered data sources without HTTP overhead
+5. **Result Federation**: Results are returned to the main query engine for federation with other data
+
+## Non-Spring Usage
+
+For applications not using Spring Boot:
+
 ```java
-String filteredQuery = """
-    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    PREFIX vocab: <http://example.org/vocab#>
-    
-    SELECT ?person ?label
-    WHERE {
-      SERVICE <urn:jena:service:example-tdb> {
-        ?person a vocab:Person ;
-                rdfs:label ?label ;
-                vocab:hasCategory ?category .
-        FILTER(?category = "researcher")
-      }
-    }
-    """;
+LocalSparqlServiceRegistry registry = new LocalSparqlServiceRegistry();
+registry.initialize();
+
+Model myModel = ModelFactory.createDefaultModel();
+registry.registerModel("urn:jena:service:my-model", myModel);
+
+// Use in SPARQL queries as shown above
+
+registry.shutdown(); // Clean up when done
 ```
 
 ## License
