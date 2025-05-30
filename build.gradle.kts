@@ -10,10 +10,22 @@ plugins {
     alias(libs.plugins.axion.release)
 }
 
-group = "zone.cogni.semanticz"
-
 repositories {
+    if (project.hasProperty("jenkins-ci")) {
+        maven {
+            url = uri("${System.getProperty("nexus.url")}/repository/cognizone-group")
+            credentials {
+                username = System.getProperty("nexus.username")
+                password = System.getProperty("nexus.password")
+            }
+            isAllowInsecureProtocol = true
+        }
+    }
+    mavenLocal()
     mavenCentral()
+    maven {
+        url = uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
+    }
 }
 
 java {
@@ -24,7 +36,6 @@ java {
     withSourcesJar()
 }
 
-version = scmVersion.version
 scmVersion {
     tag.apply {
         prefix = "v"
@@ -38,8 +49,10 @@ scmVersion {
         suffix = "SNAPSHOT"
         separator = "-"
     }
-    versionIncrementer("incrementPatch")
 }
+
+version = scmVersion.version
+group = "zone.cogni.semanticz"
 
 pmd {
     isIgnoreFailures = true
@@ -101,6 +114,9 @@ tasks.jar {
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {
+            groupId = project.group.toString()
+            artifactId = "semanticz-jena-local-federation"
+            version = scmVersion.version
             from(components["java"])
 
             pom {
@@ -133,6 +149,18 @@ publishing {
     }
 
     repositories {
+        if (project.hasProperty("publishToCognizoneNexus")) {
+            maven {
+                credentials {
+                    username = System.getProperty("nexus.username")
+                    password = System.getProperty("nexus.password")
+                }
+                val releasesRepoUrl = "${System.getProperty("nexus.url")}/repository/cognizone-release"
+                val snapshotsRepoUrl = "${System.getProperty("nexus.url")}/repository/cognizone-snapshot"
+                url = uri(if (version.toString().endsWith("SNAPSHOT")) snapshotsRepoUrl else releasesRepoUrl)
+                isAllowInsecureProtocol = true
+            }
+        }
         if (project.hasProperty("publishToMavenCentral")) {
             maven {
                 credentials {
@@ -147,15 +175,15 @@ publishing {
     }
 }
 
+signing {
+    if (project.hasProperty("publishToMavenCentral") || project.hasProperty("publishToCognizoneNexus")) {
+        sign(publishing.publications["mavenJava"])
+    }
+}
+
 tasks.withType<Javadoc> {
     options {
         (this as StandardJavadocDocletOptions).addBooleanOption("Xdoclint:none", true)
     }
     isFailOnError = false
-}
-
-signing {
-    if (project.hasProperty("publishToMavenCentral")) {
-        sign(publishing.publications["mavenJava"])
-    }
 }
